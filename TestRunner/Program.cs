@@ -72,9 +72,20 @@ namespace TestRunner
                     var padWith = (Console.BufferWidth - 12) / 2;
 
                     Console.WriteLine("n".PadLeft(5) + " │ " + "Expected".PadRight(padWith) + " │ " + "Returned".PadRight(padWith));
-                    foreach (var pair in intendedLines.Zip(outputLines, (i, o) => new { intended = i ?? "", output = o ?? "" }).Select((t, i) => new { t.intended, t.output, i }))
+                    var lines = Math.Max(outputLines.Length, intendedLines.Length);
+                    for (var i = 0; i < lines; i++)
                     {
-                        Console.WriteLine(pair.i.ToString().PadLeft(5) + " │ " + pair.intended.PadRight(padWith) + " │ " + pair.output.PadRight(padWith));
+                        var intendedLine = i < intendedLines.Length ? intendedLines[i] : "";
+                        var outputLine = i < outputLines.Length ? outputLines[i] : "";
+                        var intendedLineParts = Chunkify(intendedLine, padWith);
+                        var outputLineParts = Chunkify(outputLine, padWith);
+                        var chunks = Math.Max(outputLineParts.Length, intendedLineParts.Length);
+                        for (var j = 0; j < chunks; j++)
+                        {
+                            var intendedLinePart = j < intendedLineParts.Length ? intendedLineParts[j] : "";
+                            var outputLinePart = j < outputLineParts.Length ? outputLineParts[j] : "";
+                            Console.WriteLine((j == 0 ? i.ToString() : "").PadLeft(5) + " │ " + intendedLinePart.PadRight(padWith) + " │ " + outputLinePart.PadRight(padWith));
+                        }
                     }
                 }
             }
@@ -90,6 +101,17 @@ namespace TestRunner
             Console.WriteLine("Press a key to continue...");
             Console.ReadKey(true);
         }
+
+        private static string[] Chunkify(string intendedLine, int chunkWidth)
+        {
+            var chunks = new string[(intendedLine.Length + chunkWidth - 1) / chunkWidth];
+            for (var i = 0; i < chunks.Length; i++)
+            {
+                chunks[i] = intendedLine.Substring(i * chunkWidth, Math.Min(chunkWidth, intendedLine.Length - i * chunkWidth));
+            }
+            return chunks;
+        }
+
 
         private static TimeSpan RunTest(string fileNameIn, string fileNameOut, Action testMethod, out string[] outputLines,
     out string[] intendedLines)
