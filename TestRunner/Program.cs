@@ -12,6 +12,10 @@ namespace TestRunner
     {
         static void Main(string[] args)
         {
+            // Repeat runs for more accurate timings
+            var warmupRuns = 1;
+            var testRuns = 1;
+
             // 1. Refer each project containing test programs and reference the main method by key (optional)
             var tests = new Dictionary<string, Action>()
             {
@@ -32,51 +36,45 @@ namespace TestRunner
             var totalElapsed = TimeSpan.Zero;
             var passed = 0;
             var failed = 0;
-            foreach (var file in Directory.GetFiles(testName, $"*.{inExtension}"))
+            foreach (var fileNameIn in Directory.GetFiles(testName, $"*.{inExtension}"))
             {
-                using (var inStream = File.OpenRead(file))
-                using (var inStreamReader = new StreamReader(inStream))
-                using (var outStream = new MemoryStream())
-                using (var outStreamWriter = new StreamWriter(outStream) { AutoFlush = true })
+                var fileNameOut = Path.ChangeExtension(fileNameIn, outExtension);
+
+                string[] outputLines;
+                string[] intendedLines;
+
+                int run;
+                for (run = 0; run < warmupRuns; run++)
                 {
-                    var outStreamReader = new StreamReader(outStream);
+                    RunTest(fileNameIn, fileNameOut, testMethod, out outputLines, out intendedLines);
+                }
 
-                    Console.SetIn(inStreamReader);
-                    Console.SetOut(outStreamWriter);
-                    
-                    stopwatch.Reset();
-                    stopwatch.Start();
-                    testMethod();
-                    stopwatch.Stop();
-                    totalElapsed += stopwatch.Elapsed;
+                TimeSpan elapsed = TimeSpan.Zero;
+                run = 0;
+                do
+                {
+                    elapsed += RunTest(fileNameIn, fileNameOut, testMethod, out outputLines, out intendedLines);
+                } while (++run < testRuns);
+                elapsed = new TimeSpan(elapsed.Ticks / testRuns);
 
-                    Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
-                    Console.SetIn(new StreamReader(Console.OpenStandardInput()));
-                    Console.OutputEncoding = Encoding.UTF8;
+                totalElapsed += elapsed;
 
-                    outStream.Position = 0;
-                    var output = outStreamReader.ReadToEnd();
-                    var intended = File.ReadAllText(Path.ChangeExtension(file, outExtension)); // Open outputFile
-                    var outputLines = Regex.Split(output, "(\r\n|\r|\n)");
-                    var intendedLines = Regex.Split(intended, "(\r\n|\r|\n)");
+                if (intendedLines.Zip(outputLines, (i, o) => i == o).All(b => b))
+                {
+                    passed++;
+                    Console.WriteLine($"Pass {elapsed.TotalMilliseconds:F5}ms: {Path.GetFileNameWithoutExtension(fileNameIn)}");
+                }
+                else
+                {
+                    failed++;
+                    Console.WriteLine($"Fail {elapsed.TotalMilliseconds:F5}ms: {Path.GetFileNameWithoutExtension(fileNameIn)}:");
 
-                    if (intendedLines.Zip(outputLines, (i, o) => i == o).All(b => b))
+                    var padWith = (Console.BufferWidth - 12) / 2;
+
+                    Console.WriteLine("n".PadLeft(5) + " │ " + "Expected".PadRight(padWith) + " │ " + "Returned".PadRight(padWith));
+                    foreach (var pair in intendedLines.Zip(outputLines, (i, o) => new { intended = i ?? "", output = o ?? "" }).Select((t, i) => new { t.intended, t.output, i }))
                     {
-                        passed++;
-                        Console.WriteLine($"Pass {stopwatch.Elapsed.TotalMilliseconds:F5}ms: {Path.GetFileNameWithoutExtension(file)}");
-                    }
-                    else
-                    {
-                        failed++;
-                        Console.WriteLine($"Fail {stopwatch.Elapsed.TotalMilliseconds:F5}ms: {Path.GetFileNameWithoutExtension(file)}:");
-
-                        var padWith = (Console.BufferWidth - 12)/2;
-
-                        Console.WriteLine("n".PadLeft(5) + " │ " + "Expected".PadRight(padWith) + " │ " + "Returned".PadRight(padWith));
-                        foreach (var pair in intendedLines.Zip(outputLines, (i, o) => new { intended = i ?? "", output = o ?? "" }).Select((t, i) => new { t.intended, t.output, i}))
-                        {
-                            Console.WriteLine(pair.i.ToString().PadLeft(5) + " │ " + pair.intended.PadRight(padWith) + " │ " + pair.output.PadRight(padWith));
-                        }
+                        Console.WriteLine(pair.i.ToString().PadLeft(5) + " │ " + pair.intended.PadRight(padWith) + " │ " + pair.output.PadRight(padWith));
                     }
                 }
             }
@@ -92,5 +90,40 @@ namespace TestRunner
             Console.WriteLine("Press a key to continue...");
             Console.ReadKey(true);
         }
+
+        private static TimeSpan RunTest(string fileNameIn, string fileNameOut, Action testMethod, out string[] outputLines,
+    out string[] intendedLines)
+        {
+            TimeSpan elapsed;
+            using (var inStream = File.OpenRead(fileNameIn))
+            using (var inStreamReader = new StreamReader(inStream))
+            using (var outStream = new MemoryStream())
+            using (var outStreamWriter = new StreamWriter(outStream) { AutoFlush = true })
+            {
+                var outStreamReader = new StreamReader(outStream);
+
+                Console.SetIn(inStreamReader);
+                Console.SetOut(outStreamWriter);
+
+                var stopwatch = new Stopwatch();
+                stopwatch.Reset();
+                stopwatch.Start();
+                testMethod();
+                stopwatch.Stop();
+                elapsed = stopwatch.Elapsed;
+
+                Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
+                Console.SetIn(new StreamReader(Console.OpenStandardInput()));
+                Console.OutputEncoding = Encoding.UTF8;
+
+                outStream.Position = 0;
+                var output = outStreamReader.ReadToEnd();
+                var intended = File.ReadAllText(fileNameOut); // Open outputFile
+                outputLines = Regex.Split(output, "(\r\n|\r|\n)");
+                intendedLines = Regex.Split(intended, "(\r\n|\r|\n)");
+            }
+            return elapsed;
+        }
+
     }
 }
